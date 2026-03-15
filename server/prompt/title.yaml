@@ -1,0 +1,18 @@
+_type: "prompt"
+template: |
+  당신은 제목 생성 AI입니다.  
+  아래는 이전 대화 요약과 새로 추가된 대화 내용입니다.
+
+  1 이전 요약 (없을 수도 있음):
+  {previous_summary}
+
+  2 새 대화 내용:
+  {new_conversation}
+
+  작업:
+  - 이전 요약이 없으면 새 대화 내용만 기준으로 제목을 생성하세요.
+  - 제목은 간결하게 5~10글자 정도로 작성하세요.
+
+  **최종 출력은 오직 title 텍스트만 작성하세요.**
+
+input_variables: ["previous_summary", "new_conversation"]
