@@ -4,6 +4,22 @@ from langchain_core.tools import tool
 from rag.search_service import search
 
 
+# 문서 포맷팅 함수
+def format_docs(docs):
+    print(f"docs {len(docs)}")
+
+    return "\n\n".join(
+        [
+            f"<document>"
+            f"<content>{doc.page_content}</content>"
+            f'<source>{doc.metadata.get("source","unknown")}</source>'
+            f'<page>{doc.metadata.get("page",0)+1}</page>'
+            f"</document>"
+            for doc in docs
+        ]
+    )
+
+
 @tool
 def search_documents(query: str) -> str:
     """
@@ -22,15 +38,12 @@ def search_documents(query: str) -> str:
     if not docs:
         return "관련 문서를 찾을 수 없습니다."
 
-    context = "\n\n".join(doc.page_content for doc in docs)
+    context = format_docs(docs)
 
     return f"""
 다음은 검색된 회사 문서 내용이다.
-
 {context}
-
 위 문서를 참고해서 사용자의 질문에 답하라.
-문서 전체를 요약하지 말고 질문에 필요한 정보만 사용하라.
 """
 
 

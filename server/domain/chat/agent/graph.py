@@ -2,10 +2,7 @@
 from langgraph.graph import StateGraph, END
 
 from domain.chat.agent.state import ChatState
-from domain.chat.agent.node import (
-    chatbot_node,
-    tool_node,
-)
+from domain.chat.agent.node import chatbot_node, tool_node, rewrite_question_node
 from langgraph.prebuilt import ToolNode
 
 from domain.chat.agent.tool import get_user_information
@@ -17,11 +14,14 @@ def build_chat_graph():
 
     builder = StateGraph(ChatState)
 
+    builder.add_node("rewrite_question", rewrite_question_node)
     builder.add_node("chatbot", chatbot_node)
     builder.add_node("tools", tool_node)
 
-    builder.add_edge(START, "chatbot")
+    # builder.add_edge(START, "chatbot")
+    builder.set_entry_point("rewrite_question")
 
+    builder.add_edge("rewrite_question", "chatbot")
     # builder.add_conditional_edges("chatbot", tools_condition)
     builder.add_conditional_edges(
         "chatbot",

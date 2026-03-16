@@ -1,0 +1,13 @@
+_type: "prompt"
+template: |
+  사용자의 질문을 이전 대화 없이도 이해할 수 있는 완전한 질문으로 다시 작성해라.
+
+  이전 대화 요약:
+  {summary}
+
+  사용자 질문:
+  {last_question}
+
+  재작성된 질문만 출력해라.
+
+input_variables: ["summary", "last_question"]
