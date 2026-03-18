@@ -14,24 +14,24 @@
 graph TD
     A[사용자 질문] --> B[Question Rewriter]
 
-    B --> C{첫 번째 턴인가?}
+    B --> C{첫 번째 턴인가}
 
     C -->|Yes| D[Title 생성]
     C -->|No| E[Title 생성 생략]
 
-    D --> F[LLM 호출 (Tool Enabled)]
+    D --> F[LLM Tool Enabled 호출]
     E --> F
 
-    F --> G{Tool 호출 필요?}
+    F --> G{Tool 호출 필요}
 
-    G -->|Yes| H[RAG Tool 호출 (문서 검색)]
+    G -->|Yes| H[RAG Tool 호출]
     H --> I[검색 결과 반환]
 
     I --> J[LLM 최종 답변 생성]
 
     G -->|No| J
 
-    J --> K{턴 수 ≥ 3 ?}
+    J --> K{턴 수 >= 3}
 
     K -->|Yes| L[Summary 생성 또는 업데이트]
     K -->|No| M[Summary 생략]
@@ -39,12 +39,12 @@ graph TD
     L --> N[메모리 저장]
     M --> N
 
-    N --> O[Event Publish (chat.completed)]
+    N --> O[Event Publish chat.completed]
 
     O --> P[비동기 Worker]
 
     P --> Q[ChatCompletedHandler]
-    Q --> R[DB 저장 / Summary / Title 후처리]
+    Q --> R[DB 저장 및 후처리]
 
     R --> S[응답 반환]
 ```
