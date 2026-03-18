@@ -2,13 +2,11 @@
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_core.prompts import load_prompt
 from domain.chat.agent.state import ChatState
-from core.llm import llm, tool_llm, tools
+from core.llm import small_token_llm, tool_llm, tools
 from domain.chat.agent.tool import get_user_information, search_documents
 from rag.search_service import search
-
-
-from langchain_core.messages import SystemMessage
-
+from core.event_bus import worker
+from langchain_core.messages import SystemMessage, HumanMessage
 from langgraph.prebuilt import ToolNode
 
 tool_node = ToolNode(tools=tools)
@@ -16,6 +14,7 @@ tool_node = ToolNode(tools=tools)
 
 async def chatbot_node(state: ChatState):
 
+    print(">>>> chatbot_node start")
     summary = state.get("conversation_summary", "")
 
     system_prompt = f"""
@@ -31,44 +30,59 @@ async def chatbot_node(state: ChatState):
     4. tool 결과를 바탕으로 답변한다.
     5. 반드시 "사용자의 질문"을 기준으로 답변한다.
     6. 문서 전체를 요약하지 말고 질문에 필요한 부분만 사용한다
+    7. 특별한 언급이 없는 경우 반드시 한국어로 답변한다.
     """
 
     messages = [SystemMessage(content=system_prompt), *state["messages"]]
 
     response = await tool_llm.ainvoke(messages)
 
+    print(">>>> chatbot_node end")
     return {"messages": [response]}
 
 
 async def rewrite_question_node(state: ChatState):
 
+    print(">>>> rewrite question start")
     messages = state["messages"]
 
-    if len(messages) == 1:
-        return {"messages": messages}
-
+    # if len(messages) == 1:
+    #     return {"messages": messages}
     summary = state.get("conversation_summary", "")
+    prompt = load_prompt("prompt/rewrite_question.yaml")
 
-    recent_human = [m.content for m in messages if isinstance(m, HumanMessage)][-2:]
+    system_message = prompt.format(summary=summary)
+    recent_human = [m.content for m in messages][-2:]
 
-    system_prompt = f"""
-너는 사용자의 질문을 standalone question으로 재작성하는 AI다.
+    rewrite_messages = [SystemMessage(content=system_message), *recent_human]
 
-이전 대화 요약:
-{summary}
-
-규칙
-1. 질문 의미를 바꾸지 않는다
-2. standalone question으로 만든다
-3. 질문만 반환한다
-"""
-
-    rewrite_messages = [SystemMessage(content=system_prompt), *recent_human]
-
-    result = await llm.ainvoke(rewrite_messages)
+    result = await small_token_llm.ainvoke(rewrite_messages)
 
     rewritten_question = result.content
-
     messages[-1] = HumanMessage(content=rewritten_question)
-
+    print(f"rewrite question = {rewritten_question}")
+    print("<<<< rewrite question end")
     return {"messages": messages, "standalone_question": rewritten_question}
+
+
+async def title_node(state: ChatState):
+    """
+    첫 턴일 경우 Title 생성 이벤트 발행
+    LLM 호출 X
+    """
+    turn = state.get("turn", 1)
+    if turn != 1:
+        return {}
+
+    question = state.get("question", "제목없음")
+    session_id = state.get("session_id")
+
+    # Worker 이벤트 발행
+    await worker.submit(
+        {
+            "type": "title.completed",
+            "data": {"session_id": session_id, "question": question},
+        }
+    )
+
+    return {}

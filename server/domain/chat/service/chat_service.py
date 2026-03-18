@@ -5,174 +5,154 @@ from sqlalchemy.orm import Session
 from langchain_core.messages import HumanMessage, AIMessage
 from domain.chat.repository import ChatRepository
 from domain.chat.chains.summary_chain import SummaryChain
+from domain.chat.chains.title_chain import TitleChain
 from langchain_core.messages import HumanMessage, AIMessage
 from core.db import SessionLocal
 
 from langchain_teddynote import logging
 from dotenv import load_dotenv
+from core.event_bus import EventBus
 
-load_dotenv()
-
-logging.langsmith("SI_ASSISTANT")
+# load_dotenv()
+# logging.langsmith("SI_ASSISTANT")
 
 
 class ChatService:
-    def __init__(self, repo: ChatRepository, summary_chain: SummaryChain):
+
+    def __init__(self, repo: ChatRepository, event_bus: EventBus):
         self.repo = repo
-        self.summary_chain = summary_chain
+        self.event_bus = event_bus
         self.chat_graph = build_chat_graph()
 
     async def stream_chat(self, db: Session, question: str, session_id: str):
-
-        session = self.repo.get_session(db, session_id)
-        conversation_summary = session.summary if session and session.summary else ""
-
-        recent_msgs = self.repo.get_recent_messages(db, session_id)
-
-        messages = []
-
-        for m in recent_msgs:
-            print(f"role = {m.role}")
-            print(f"content = {m.content}")
-            if m.role == "user":
-                messages.append(HumanMessage(content=m.content))
-            elif m.role == "assistant":
-                messages.append(AIMessage(content=m.content))
-
-        messages.append(HumanMessage(content=question))
-
-        ai_answer = ""
+        conversation_summary = self.__get_conversation_summary(db, session_id)
+        messages = self.__get_messages(db, question, session_id)
 
         yield "🔍 질문을 분석중입니다...\n\n"
-
+        ai_answer = ""
         async for event in self.chat_graph.astream_events(
-            {"messages": messages, "conversation_summary": conversation_summary},
+            {
+                "messages": messages,
+                "conversation_summary": conversation_summary,
+                "question": question,
+                "session_id": session_id,
+            },
             version="v1",
         ):
-
             event_type = event.get("event")
-
             # tool 실행 안내
             if event_type == "on_tool_start":
                 if event.get("name") == "get_user_information":
                     yield "👤 사용자 정보를 조회하고 있습니다...\n\n"
                 if event.get("name") == "search_documents":
                     yield "📚 문서를 조회하고 있습니다...\n\n"
-
             # token streaming
             if event_type == "on_chat_model_stream":
-
                 node = event.get("metadata", {}).get("langgraph_node")
-
                 if node == "chatbot":
-
                     chunk = event["data"]["chunk"]
-
                     content = getattr(chunk, "content", None)
-
                     if isinstance(content, str) and content:
                         ai_answer += content
                         yield content
-                    # chunk = event["data"]["chunk"]
-
-                    # if chunk.content:
-                    #     ai_answer += chunk.content
-                    #     yield chunk.content
 
         # --------------------------------
         # 백그라운드에서 DB 저장 + Summary
         # --------------------------------
-
-        print("call save_chat_history")
-        asyncio.create_task(
-            self.save_chat_history(
-                session_id=session_id,
-                question=question,
-                ai_answer=ai_answer,
-                conversation_summary=conversation_summary,
-            )
+        turn = self.repo.get_next_turn(db, session_id)
+        await self.event_bus.publish(
+            {
+                "type": "chat.completed",
+                "data": {
+                    "session_id": session_id,
+                    "question": question,
+                    "ai_answer": ai_answer,
+                    "turn": turn,
+                    "conversation_summary": conversation_summary,
+                },
+            }
         )
-        # # ------------------------
-        # # Summary 생성
-        # # ------------------------
+        print("submit 완료")
 
-        # summary = self.summary_chain.invoke(
-        #     conversation_summary, [HumanMessage(question), AIMessage(ai_answer)]
-        # )
+    def __get_conversation_summary(self, db: Session, session_id: str):
+        session = self.repo.get_session(db, session_id)
+        return session.summary if session and session.summary else ""
 
-        # session = self.repo.save_session(
-        #     db,
-        #     session_id,
-        #     "kobe",
-        #     summary.title,
-        #     summary.summary,
-        # )
+    def __get_messages(self, db: Session, question: str, session_id: str):
+        recent_msgs = self.repo.get_recent_messages(db, session_id)
 
-        # # ------------------------
-        # # 메시지 저장
-        # # ------------------------
+        messages = []
+        for m in recent_msgs:
+            if m.role == "user":
+                messages.append(HumanMessage(content=m.content))
+            elif m.role == "assistant":
+                messages.append(AIMessage(content=m.content))
 
-        # turn = self.repo.get_next_turn(db, session_id)
+        messages.append(HumanMessage(content=question))
+        return messages
 
-        # user_chat_message = self.repo.save_message(
-        #     db, session_id, "user", question, turn
-        # )
+    # async def save_chat_history(
+    #     self,
+    #     session_id: str,
+    #     question: str,
+    #     ai_answer: str,
+    #     conversation_summary: str,
+    # ):
+    #     """
+    #     스트리밍 응답 이후 백그라운드에서 실행되는 작업
+    #     """
+    #     print("call save_chat_history...")
+    #     db = SessionLocal()
 
-        # ai_chat_message = self.repo.save_message(
-        #     db, session_id, "assistant", ai_answer, turn
-        # )
+    #     try:
 
-        # db.commit()
+    #         turn = self.repo.get_next_turn(db, session_id)
+    #         print(f"turn={turn}")
+    #         title = None
+    #         summary = conversation_summary
 
-        # db.refresh(session)
-        # db.refresh(user_chat_message)
-        # db.refresh(ai_chat_message)
+    #         # # ---------------------
+    #         # # Title (첫 턴만)
+    #         # # ---------------------
+    #         if turn == 1:
+    #             title_result = self.title_chain.invoke(question)
+    #             title = title_result.title
 
-    async def save_chat_history(
-        self,
-        session_id: str,
-        question: str,
-        ai_answer: str,
-        conversation_summary: str,
-    ):
-        """
-        스트리밍 응답 이후 백그라운드에서 실행되는 작업
-        """
-        print("call save_chat_history...")
-        db = SessionLocal()
+    #         # -------------------
+    #         # Summary (3턴 이후)
+    #         # -------------------
+    #         if turn % 3 == 0:
+    #             summary_result = self.summary_chain.invoke(
+    #                 conversation_summary,
+    #                 f"User: {question}\nAssistant: {ai_answer}",
+    #             )
 
-        try:
-            summary = self.summary_chain.invoke(
-                conversation_summary,
-                [HumanMessage(question), AIMessage(ai_answer)],
-            )
+    #             summary = summary_result.summary
 
-            session = self.repo.save_session(
-                db,
-                session_id,
-                "kobe",
-                summary.title,
-                summary.summary,
-            )
+    #         session = self.repo.save_session(
+    #             db,
+    #             session_id,
+    #             "kobe",
+    #             title,
+    #             summary,
+    #         )
 
-            turn = self.repo.get_next_turn(db, session_id)
+    #         user_chat_message = self.repo.save_message(
+    #             db, session_id, "user", question, turn
+    #         )
 
-            user_chat_message = self.repo.save_message(
-                db, session_id, "user", question, turn
-            )
+    #         ai_chat_message = self.repo.save_message(
+    #             db, session_id, "assistant", ai_answer, turn
+    #         )
 
-            ai_chat_message = self.repo.save_message(
-                db, session_id, "assistant", ai_answer, turn
-            )
+    #         db.commit()
 
-            db.commit()
+    #         db.refresh(session)
+    #         db.refresh(user_chat_message)
+    #         db.refresh(ai_chat_message)
 
-            db.refresh(session)
-            db.refresh(user_chat_message)
-            db.refresh(ai_chat_message)
+    #     except Exception as e:
+    #         print("❌ Chat history save error:", e)
 
-        except Exception as e:
-            print("❌ Chat history save error:", e)
-
-        finally:
-            db.close()
+    #     finally:
+    #         db.close()

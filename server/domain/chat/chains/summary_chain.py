@@ -3,7 +3,6 @@ from pydantic import BaseModel, Field
 
 
 class Summary(BaseModel):
-    title: str = Field(description="generated title")
     summary: str = Field(description="updated summary")
 
 

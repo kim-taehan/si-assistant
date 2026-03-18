@@ -40,11 +40,19 @@ def search_documents(query: str) -> str:
 
     context = format_docs(docs)
 
-    return f"""
-다음은 검색된 회사 문서 내용이다.
+    prompt = f"""
+너는 회사 내부 문서 전문가 AI다.
+
+아래는 검색된 회사 문서 내용이다:
 {context}
-위 문서를 참고해서 사용자의 질문에 답하라.
+
+규칙:
+1. 사용자의 질문: "{query}"에 정확히 답할 것
+2. 이전 질문/답변 맥락은 필요시 참고하되, 반드시 위 문서 내용을 우선적으로 사용
+
+최종 출력은 오직 사용자 질문에 대한 답변 텍스트만 작성
 """
+    return prompt
 
 
 @tool

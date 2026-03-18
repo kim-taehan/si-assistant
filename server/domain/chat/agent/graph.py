@@ -2,9 +2,11 @@
 from langgraph.graph import StateGraph, END
 
 from domain.chat.agent.state import ChatState
-from domain.chat.agent.node import chatbot_node, tool_node, rewrite_question_node
-from langgraph.prebuilt import ToolNode
-
+from domain.chat.agent.node import (
+    rewrite_question_node,
+    chatbot_node,
+    tool_node,
+)
 from domain.chat.agent.tool import get_user_information
 from langgraph.graph import StateGraph, START, END
 from langgraph.prebuilt import tools_condition
@@ -14,15 +16,14 @@ def build_chat_graph():
 
     builder = StateGraph(ChatState)
 
+    # 노드 정의
     builder.add_node("rewrite_question", rewrite_question_node)
     builder.add_node("chatbot", chatbot_node)
     builder.add_node("tools", tool_node)
 
-    # builder.add_edge(START, "chatbot")
+    # 엣지 정의
     builder.set_entry_point("rewrite_question")
-
     builder.add_edge("rewrite_question", "chatbot")
-    # builder.add_conditional_edges("chatbot", tools_condition)
     builder.add_conditional_edges(
         "chatbot",
         tools_condition,
@@ -31,11 +32,7 @@ def build_chat_graph():
             "__end__": END,
         },
     )
-
     builder.add_edge("tools", "chatbot")
-
-    # builder.add_edge("chatbot", END)
-
     return builder.compile()
 
 
