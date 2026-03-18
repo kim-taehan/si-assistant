@@ -16,11 +16,11 @@ graph TD
 
     %% Rewrite Fast Path
     B --> B1[History + Question → 단일 Prompt 생성]
-    B1 --> B2[LLM 호출 (단일 HumanMessage)]
+    B1 --> B2["LLM 호출 (단일 HumanMessage)"]
     B2 --> B3[Standalone Question 생성]
 
     %% 메인 응답 생성
-    B3 --> F[LLM 호출 (최소 Prompt)]
+    B3 --> F["LLM 호출 (최소 Prompt)"]
 
     %% Tool 분기
     F --> G{Tool 호출 필요}
@@ -28,7 +28,7 @@ graph TD
     G -->|Yes| H[RAG Tool 호출]
     H --> I[검색 결과 반환]
 
-    I --> J[LLM 최종 답변 생성 (단일 Prompt)]
+    I --> J["LLM 최종 답변 생성 (단일 Prompt)"]
 
     G -->|No| J
 
