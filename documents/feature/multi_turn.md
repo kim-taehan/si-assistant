@@ -14,39 +14,53 @@
 graph TD
     A[사용자 질문] --> B[Question Rewriter]
 
-    B --> C{첫 번째 턴인가}
+    %% Rewrite Fast Path
+    B --> B1[History + Question → 단일 Prompt 생성]
+    B1 --> B2[LLM 호출 (단일 HumanMessage)]
+    B2 --> B3[Standalone Question 생성]
 
-    C -->|Yes| D[Title 생성]
-    C -->|No| E[Title 생성 생략]
+    %% 메인 응답 생성
+    B3 --> F[LLM 호출 (최소 Prompt)]
 
-    D --> F[LLM Tool Enabled 호출]
-    E --> F
-
+    %% Tool 분기
     F --> G{Tool 호출 필요}
 
     G -->|Yes| H[RAG Tool 호출]
     H --> I[검색 결과 반환]
 
-    I --> J[LLM 최종 답변 생성]
+    I --> J[LLM 최종 답변 생성 (단일 Prompt)]
 
     G -->|No| J
 
-    J --> K{턴 수 >= 3}
+    %% Event 발행 (여기서 모든 후처리 분리)
+    J --> N[Event Payload 구성]
 
-    K -->|Yes| L[Summary 생성 또는 업데이트]
-    K -->|No| M[Summary 생략]
+    N --> O[Event Publish: chat.completed]
 
-    L --> N[메모리 저장]
-    M --> N
+    %% Event Bus
+    O --> P[Event Bus]
+    P --> Q[비동기 Worker]
 
-    N --> O[Event Publish chat.completed]
+    %% Handler 진입
+    Q --> R[ChatCompletedHandler]
 
-    O --> P[비동기 Worker]
+    %% Title 조건 (1턴만)
+    R --> T{턴 == 1}
+    T -->|Yes| T1[Title 생성]
+    T -->|No| T2[Title 생략]
 
-    P --> Q[ChatCompletedHandler]
-    Q --> R[DB 저장 및 후처리]
+    %% Summary 조건 (3턴마다)
+    R --> S{턴 % 3 == 0}
+    S -->|Yes| S1[Summary 생성 또는 업데이트]
+    S -->|No| S2[Summary 생략]
 
-    R --> S[응답 반환]
+    %% 후처리
+    T1 --> U[DB 저장 및 후처리]
+    T2 --> U
+    S1 --> U
+    S2 --> U
+
+    U --> V[응답 반환]
 ```
 
 ## 구성 요소
@@ -73,9 +87,9 @@ Title: 백두산 높이 질문
 ```
 
 ### 3. Conversation Summary Generator
-- 3턴 이상 대화가 누적되었을 때부터 실행
+- 3턴 마다 호출 대화가 누적되었을 때부터 실행
 - 조건
-  - turn_count >= 3
+  - turn_count % 3 == 0
 - 역할
   - 이전 대화 핵심 내용 압축
   - 장기 메모리 역할
@@ -88,10 +102,10 @@ Title: 백두산 높이 질문
 
 ## 실행 규칙 
 
-| 기능               | 실행 조건             | 실행 빈도  |
-| ---------------- | ----------------- | ------ |
-| Title 생성         | `turn_count == 1` | 1회     |
-| Summary 생성       | `turn_count % 3 == 0` | 3 턴 마다 |
-| Question Rewrite | 모든 질문             | 매 턴    |
+| 기능               | 실행 조건             | 실행 빈도  | 실행 방식|
+| ---------------- | ----------------- | ------ | --|
+| Title 생성         | `turn_count == 1` | 1회     | event bus|
+| Summary 생성       | `turn_count % 3 == 0` | 3 턴 마다 |event bus|
+| Question Rewrite | 모든 질문             | 매 턴    |lang graph|
 
 
